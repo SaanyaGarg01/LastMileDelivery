@@ -196,6 +196,7 @@ class StatusService {
     // 1. Send HTML Email & In-App Notification
     await notificationService.notifyUser({
       userId: order.customerId,
+      recipientEmail: order.customer?.email,
       orderId: order.id,
       title: titleMap[nextStatus],
       message: messageMap[nextStatus],
