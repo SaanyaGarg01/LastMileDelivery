@@ -3,18 +3,11 @@ const nodemailer = require('nodemailer');
 
 class NotificationService {
   constructor() {
-    this.brevoApiKey = process.env.BREVO_API_KEY || null;
-    this.senderEmail = process.env.SMTP_USER || 'saanyagarg400@gmail.com';
-    this.senderName = 'Last-Mile Tracker';
     this.transporter = null;
     this.initMailer();
   }
 
   initMailer() {
-    if (this.brevoApiKey) {
-      console.log(`[MAILER] ✅ Brevo REST API Engine Active for ${this.senderEmail}`);
-    }
-
     const smtpUser = process.env.SMTP_USER || 'saanyagarg400@gmail.com';
     const smtpPass = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : 'qohyurvvzffqhmpf';
 
@@ -27,45 +20,14 @@ class NotificationService {
           user: smtpUser,
           pass: smtpPass,
         },
-        family: 4,
+        family: 4, // FORCES IPV4 SOCKET BINDING (Eliminates Linux cloud IPv6 blocks on Render)
         tls: {
           rejectUnauthorized: false,
         },
       });
-      console.log(`[MAILER] ✅ Backup Gmail IPv4 Transporter Initialized`);
-    }
-  }
-
-  async _sendBrevoEmail({ to, toName, subject, html, text }) {
-    try {
-      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'api-key': this.brevoApiKey,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          sender: { name: this.senderName, email: this.senderEmail },
-          to: [{ email: to, name: toName || to }],
-          subject,
-          htmlContent: html,
-          textContent: text,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (res.status === 201) {
-        console.log(`📧 [BREVO API SENT SUCCESSFUL] To: ${to} | Subject: ${subject} | MsgID: ${data.messageId}`);
-        return { success: true, messageId: data.messageId };
-      } else {
-        console.error(`❌ [BREVO API ERROR] To: ${to} | Status: ${res.status} | Details:`, JSON.stringify(data));
-        return { success: false, error: data };
-      }
-    } catch (err) {
-      console.error(`❌ [BREVO EXCEPTION] To: ${to} | ${err.message}`);
-      return { success: false, error: err.message };
+      console.log(`[MAILER] ✅ Gmail Direct IPv4 Transporter Initialized for ${smtpUser}`);
+    } else {
+      console.log('[MAILER] No SMTP credentials configured — email notifications will be logged to console');
     }
   }
 
@@ -137,7 +99,7 @@ class NotificationService {
   }
 
   /**
-   * Main notification handler — sends email via Brevo REST API with Gmail IPv4 fallback
+   * Main notification handler — sends real emails directly to ANY user address via Gmail IPv4 SMTP
    */
   async notifyUser({ userId, recipientEmail, orderId, title, message, type = 'INFO' }) {
     let notif = null;
@@ -162,7 +124,7 @@ class NotificationService {
           channel: 'EMAIL',
           type,
           status: 'SENT',
-          provider: this.brevoApiKey ? 'BREVO_API' : 'GMAIL_IPV4_SMTP',
+          provider: 'GMAIL_IPV4_SMTP',
           message: `${title}: ${message}`,
           sentAt: new Date(),
         },
@@ -187,20 +149,7 @@ class NotificationService {
         ctaUrl: order ? `${process.env.FRONTEND_URL || 'http://localhost:5173'}/customer/orders/${orderId}` : undefined,
       });
 
-      // 1. Try Brevo REST API First if key exists
-      if (this.brevoApiKey) {
-        const brevoResult = await this._sendBrevoEmail({
-          to: targetEmail,
-          toName: user?.name || targetEmail,
-          subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
-          html: htmlBody,
-          text: message,
-        });
-
-        if (brevoResult.success) return notif;
-      }
-
-      // 2. Backup: Send real email via Gmail IPv4 SMTP
+      // Send real email via Gmail Direct IPv4 SMTP
       if (this.transporter) {
         const mailOptions = {
           from: `"Last-Mile Tracker" <${process.env.SMTP_USER || 'saanyagarg400@gmail.com'}>`,
@@ -211,7 +160,7 @@ class NotificationService {
         };
 
         const info = await this.transporter.sendMail(mailOptions);
-        console.log(`📧 [GMAIL IPV4 BACKUP SENT SUCCESSFUL] To: ${targetEmail} | Subject: ${title} | MsgID: ${info.messageId}`);
+        console.log(`📧 [GMAIL DIRECT SENT SUCCESSFUL] To: ${targetEmail} | Subject: ${title} | MsgID: ${info.messageId}`);
       }
 
       return notif;
