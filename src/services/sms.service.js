@@ -76,7 +76,7 @@ class SmsService {
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || 'VAe390f64a478e26aed70db9c0743901b9';
+    const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || 'VA6ce795732b9ab1cfbfcdda6cfaa9cc79';
 
     if (accountSid && authToken) {
       providerName = 'TWILIO';
