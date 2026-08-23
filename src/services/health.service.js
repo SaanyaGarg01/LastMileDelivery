@@ -28,11 +28,11 @@ class HealthService {
 
     const apiResponseTimeMs = Date.now() - startTime;
 
+    const brevoKey = process.env.BREVO_API_KEY || null;
     const resendKey = process.env.RESEND_API_KEY || null;
     const smtpUser = process.env.SMTP_USER || null;
-    const smtpPass = process.env.SMTP_PASS || null;
-    const emailConfigured = resendKey || (smtpUser && smtpPass);
-    const emailProvider = resendKey ? `Resend SMTP Bridge (smtp.resend.com:587)` : smtpUser ? `Gmail SMTP (${smtpUser})` : 'NOT CONFIGURED';
+    const emailConfigured = brevoKey || resendKey || smtpUser;
+    const emailProvider = brevoKey ? 'Brevo API (any email, HTTPS)' : resendKey ? 'Resend API' : smtpUser ? `Gmail SMTP (${smtpUser})` : 'NOT CONFIGURED';
     const emailStatus = emailConfigured ? 'Configured' : 'NOT_CONFIGURED';
 
     return {

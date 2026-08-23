@@ -1,25 +1,49 @@
 const prisma = require('../config/prisma');
-const { Resend } = require('resend');
 
 class NotificationService {
   constructor() {
-    this.resend = null;
-    // All emails go to the demo inbox — Resend free plan works to the account owner email
-    this.demoInbox = process.env.DEMO_INBOX_EMAIL || 'saanyagarg400@gmail.com';
-    this.initMailer();
-  }
-
-  initMailer() {
-    const apiKey = process.env.RESEND_API_KEY;
-    if (apiKey) {
-      this.resend = new Resend(apiKey);
-      console.log(`[MAILER] ✅ Resend API Initialized → Demo inbox: ${this.demoInbox}`);
+    this.brevoApiKey = process.env.BREVO_API_KEY || null;
+    this.senderEmail = process.env.SMTP_USER || 'saanyagarg400@gmail.com';
+    this.senderName = 'Last-Mile Tracker';
+    if (this.brevoApiKey) {
+      console.log(`[MAILER] ✅ Brevo API Initialized — sender: ${this.senderEmail}`);
     } else {
-      console.log('[MAILER] ⚠️  No RESEND_API_KEY — emails logged to console only');
+      console.log('[MAILER] ⚠️  No BREVO_API_KEY — emails will be logged to console only');
     }
   }
 
-  _buildEmailHtml({ title, message, orderNumber, recipientName, recipientEmail, statusColor = '#0284c7', ctaText, ctaUrl }) {
+  async _sendBrevoEmail({ to, toName, subject, html, text }) {
+    try {
+      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': this.brevoApiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: this.senderName, email: this.senderEmail },
+          to: [{ email: to, name: toName || to }],
+          subject,
+          htmlContent: html,
+          textContent: text,
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 201) {
+        console.log(`📧 [BREVO SENT] To: ${to} | Subject: ${subject} | MsgID: ${data.messageId}`);
+        return { success: true, messageId: data.messageId };
+      } else {
+        console.error(`❌ [BREVO ERROR] To: ${to} | Status: ${res.status} | ${JSON.stringify(data)}`);
+        return { success: false, error: data };
+      }
+    } catch (err) {
+      console.error(`❌ [BREVO EXCEPTION] To: ${to} | ${err.message}`);
+      return { success: false, error: err.message };
+    }
+  }
+
+  _buildEmailHtml({ title, message, orderNumber, recipientName, statusColor = '#0284c7', ctaText, ctaUrl }) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>${title}</title></head>
@@ -31,26 +55,25 @@ class NotificationService {
         <h1 style="margin:8px 0 0;color:#fff;font-size:22px;font-weight:800;">${title}</h1>
       </td>
     </tr>
-    ${recipientEmail ? `<tr><td style="background:#fefce8;padding:10px 32px;border-bottom:1px solid #fde68a;">
-      <p style="margin:0;font-size:12px;color:#92400e;">📬 <strong>Notification for:</strong> ${recipientName || recipientEmail} &lt;${recipientEmail}&gt;</p>
-    </td></tr>` : ''}
     <tr>
       <td style="padding:32px;">
         ${recipientName ? `<p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi <strong style="color:#0f172a;">${recipientName}</strong>,</p>` : ''}
         <p style="margin:0 0 24px;color:#334155;font-size:15px;line-height:1.6;">${message}</p>
-        ${orderNumber ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:24px;">
+        ${orderNumber ? `
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:24px;">
           <p style="margin:0;color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Order Reference</p>
           <p style="margin:4px 0 0;color:#0f172a;font-size:18px;font-weight:800;font-family:monospace;">${orderNumber}</p>
         </div>` : ''}
-        ${ctaText && ctaUrl ? `<div style="text-align:center;margin:24px 0;">
-          <a href="${ctaUrl}" style="display:inline-block;background:${statusColor};color:#fff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:700;font-size:14px;">${ctaText}</a>
+        ${ctaText && ctaUrl ? `
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${ctaUrl}" style="display:inline-block;background:${statusColor};color:#fff;text-decoration:none;padding:14px 32px;border-radius:10px;font-weight:700;font-size:14px;">${ctaText}</a>
         </div>` : ''}
       </td>
     </tr>
     <tr>
       <td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;">
         <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center;">
-          Automated notification from Last-Mile Delivery Tracker.
+          Automated notification from Last-Mile Delivery Tracker. Do not reply.
         </p>
       </td>
     </tr>
@@ -66,6 +89,7 @@ class NotificationService {
     if (title.includes('Failed')) return '#ef4444';
     if (title.includes('Rescheduled')) return '#06b6d4';
     if (title.includes('Sign-In') || title.includes('Alert')) return '#64748b';
+    if (title.includes('Assigned')) return '#0284c7';
     return '#0284c7';
   }
 
@@ -87,48 +111,41 @@ class NotificationService {
           channel: 'EMAIL',
           type,
           status: 'SENT',
-          provider: 'RESEND_API',
+          provider: 'BREVO_API',
           message: `${title}: ${message}`,
           sentAt: new Date(),
         },
       }).catch(() => {});
 
-      // 3. Resolve user info
+      // 3. Resolve recipient
       const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
-      const actualRecipientEmail = recipientEmail || user?.email;
-      if (!actualRecipientEmail) return notif;
+      const targetEmail = recipientEmail || user?.email;
+      if (!targetEmail) return notif;
 
-      const order = orderId ? await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } }) : null;
+      const order = orderId
+        ? await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } })
+        : null;
+
       const htmlBody = this._buildEmailHtml({
         title,
         message,
         orderNumber: order?.orderNumber,
         recipientName: user?.name || 'Valued Customer',
-        recipientEmail: actualRecipientEmail !== this.demoInbox ? actualRecipientEmail : null,
         statusColor: this._getStatusColor(title),
         ctaText: order ? 'Track Your Order' : undefined,
-        ctaUrl: order ? `${process.env.FRONTEND_URL || 'https://lastmiledelivery-iou3.onrender.com'}/customer/orders/${orderId}` : undefined,
+        ctaUrl: order
+          ? `${process.env.FRONTEND_URL || 'https://lastmiledelivery-iou3.onrender.com'}/customer/orders/${orderId}`
+          : undefined,
       });
 
-      // 4. Send via Resend API — to demo inbox (Resend free plan)
-      //    Email body clearly shows who the actual recipient is
-      if (this.resend) {
-        const { data, error } = await this.resend.emails.send({
-          from: 'Last-Mile Tracker <onboarding@resend.dev>',
-          to: [this.demoInbox],
-          subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''} (for: ${actualRecipientEmail})`,
-          text: message,
-          html: htmlBody,
-        });
-
-        if (error) {
-          console.error(`❌ [RESEND ERROR] ${error.message || JSON.stringify(error)}`);
-        } else {
-          console.log(`📧 [EMAIL SENT] ActualRecipient: ${actualRecipientEmail} | DemoInbox: ${this.demoInbox} | Subject: ${title} | ID: ${data?.id}`);
-        }
-      } else {
-        console.log(`📧 [EMAIL LOG] To: ${actualRecipientEmail} | Subject: ${title} | ${message}`);
-      }
+      // 4. Send to the actual user's real email via Brevo API
+      await this._sendBrevoEmail({
+        to: targetEmail,
+        toName: user?.name || targetEmail,
+        subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
+        html: htmlBody,
+        text: message,
+      });
 
       return notif;
     } catch (error) {
