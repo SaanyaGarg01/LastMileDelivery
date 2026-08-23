@@ -1,4 +1,5 @@
 const prisma = require('../config/prisma');
+const smsService = require('./sms.service');
 
 class NotificationService {
   constructor() {
@@ -113,7 +114,7 @@ class NotificationService {
   }
 
   /**
-   * Main notification handler — sends real emails via Brevo REST API over HTTPS Port 443
+   * Main notification handler — sends real emails via Brevo REST API AND sends real SMS via Twilio
    */
   async notifyUser({ userId, recipientEmail, orderId, title, message, type = 'INFO' }) {
     let notif = null;
@@ -144,27 +145,29 @@ class NotificationService {
         },
       }).catch(() => {});
 
-      // Get user info for email delivery
+      // Fetch User & Order for Email & SMS Delivery
       const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
-      const targetEmail = recipientEmail || user?.email || process.env.SMTP_USER;
+      const order = orderId ? await prisma.order.findUnique({
+        where: { id: orderId },
+        include: { customer: true, assignedAgent: { include: { user: true } } },
+      }) : null;
 
-      if (!targetEmail) return notif;
+      const targetEmail = recipientEmail || user?.email || order?.customer?.email || process.env.SMTP_USER;
+      const targetPhone = user?.phone || order?.customer?.phone || '+917983789937';
 
-      const statusColor = this._getStatusColor(title);
-      const order = orderId ? await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } }) : null;
+      // 1. Send Email via Brevo API
+      if (this.brevoApiKey && targetEmail) {
+        const statusColor = this._getStatusColor(title);
+        const htmlBody = this._buildEmailHtml({
+          title,
+          message,
+          orderNumber: order?.orderNumber,
+          recipientName: user?.name || order?.customer?.name || 'Valued Customer',
+          statusColor,
+          ctaText: order ? 'Track Your Order' : undefined,
+          ctaUrl: order ? `${process.env.FRONTEND_URL || 'http://localhost:5173'}/customer/orders/${orderId}` : undefined,
+        });
 
-      const htmlBody = this._buildEmailHtml({
-        title,
-        message,
-        orderNumber: order?.orderNumber,
-        recipientName: user?.name || 'Valued Customer',
-        statusColor,
-        ctaText: order ? 'Track Your Order' : undefined,
-        ctaUrl: order ? `${process.env.FRONTEND_URL || 'http://localhost:5173'}/customer/orders/${orderId}` : undefined,
-      });
-
-      // Send real email via Brevo REST API over HTTPS Port 443
-      if (this.brevoApiKey) {
         await this._sendBrevoEmail({
           to: targetEmail,
           toName: user?.name || targetEmail,
@@ -174,9 +177,22 @@ class NotificationService {
         });
       }
 
+      // 2. Dispatch Real SMS via Twilio Verify API
+      if (targetPhone) {
+        smsService.sendOrderStatusSMS({
+          order,
+          phone: targetPhone,
+          type,
+          status: order?.status || 'UPDATED',
+          message,
+          userName: user?.name || order?.customer?.name,
+          role: user?.role || 'CUSTOMER',
+        }).catch((smsErr) => console.error('[SMS DISPATCH ERROR]', smsErr.message));
+      }
+
       return notif;
     } catch (error) {
-      console.error('❌ [EMAIL SEND ERROR]', error.message);
+      console.error('❌ [NOTIFICATION DISPATCH ERROR]', error.message);
       return notif || null;
     }
   }
