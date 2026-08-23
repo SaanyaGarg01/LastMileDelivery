@@ -9,9 +9,9 @@
     "dev:backend": "node src/server.js",
     "dev:frontend": "npm run dev --prefix client",
     "dev": "node src/server.js",
-    "build": "cd client && npm install --legacy-peer-deps && chmod +x node_modules/.bin/* 2>/dev/null || true && npx vite build && cd .. && npx prisma db push && npx prisma generate && node scratch/seed_15_agents.js",
-    "prisma:generate": "prisma generate",
-    "prisma:db:push": "prisma db push",
+    "build": "chmod +x node_modules/.bin/* 2>/dev/null || true && cd client && npm install --legacy-peer-deps && chmod +x node_modules/.bin/* 2>/dev/null || true && npx vite build && cd .. && chmod +x node_modules/.bin/* 2>/dev/null || true && node node_modules/prisma/build/index.js db push && node node_modules/prisma/build/index.js generate && node scratch/seed_15_agents.js",
+    "prisma:generate": "node node_modules/prisma/build/index.js generate",
+    "prisma:db:push": "node node_modules/prisma/build/index.js db push",
     "seed": "node scratch/seed_15_agents.js",
     "test": "vitest run"
   },
