@@ -48,7 +48,7 @@ class SmsService {
   }
 
   /**
-   * Send SMS notification for order status update / Auth alerts via Twilio Verify or REST API
+   * Send SMS notification for order status update / Auth alerts via Twilio
    */
   async sendOrderStatusSMS({ order, phone, type, status, message, userName, role }) {
     let rawPhone = phone || order?.customer?.phone || '+919876543210';
@@ -82,8 +82,8 @@ class SmsService {
       const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
       try {
-        // Try Twilio Verify API first (bypasses TRAI DLT template blocks for Indian +91 numbers)
-        const vRes = await fetch(`https://verify.twilio.com/v2/Services/${verifyServiceSid}/Verifications`, {
+        // 1. Try standard Messages REST API first to send custom branded text
+        const twRes = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
           method: 'POST',
           headers: {
             'Authorization': `Basic ${auth}`,
@@ -91,18 +91,19 @@ class SmsService {
           },
           body: new URLSearchParams({
             To: targetPhone,
-            Channel: 'sms',
+            From: process.env.TWILIO_PHONE_NUMBER ? process.env.TWILIO_PHONE_NUMBER.trim() : '+17372212163',
+            Body: smsText,
           }).toString(),
         });
 
-        const vData = await vRes.json();
+        const twData = await twRes.json();
 
-        if (vRes.ok) {
+        if (twRes.ok) {
           isTwilioSent = true;
-          console.log(`\n📱 [REAL TWILIO SMS SENT]\n  To: ${targetPhone}\n  Pattern: ${smsText}\n  SID: ${vData.sid}\n`);
+          console.log(`\n📱 [REAL TWILIO CUSTOM SMS SENT]\n  To: ${targetPhone}\n  Text: ${smsText}\n  SID: ${twData.sid}\n`);
         } else {
-          // Fallback to standard Messages REST API
-          const twRes = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+          // 2. Fallback to Twilio Verify API if TRAI DLT template error 572006 occurs for Indian numbers
+          const vRes = await fetch(`https://verify.twilio.com/v2/Services/${verifyServiceSid}/Verifications`, {
             method: 'POST',
             headers: {
               'Authorization': `Basic ${auth}`,
@@ -110,17 +111,16 @@ class SmsService {
             },
             body: new URLSearchParams({
               To: targetPhone,
-              From: process.env.TWILIO_PHONE_NUMBER ? process.env.TWILIO_PHONE_NUMBER.trim() : '',
-              Body: smsText,
+              Channel: 'sms',
             }).toString(),
           });
 
-          const twData = await twRes.json();
-          if (twRes.ok) {
+          const vData = await vRes.json();
+          if (vRes.ok) {
             isTwilioSent = true;
-            console.log(`\n📱 [REAL TWILIO SMS SENT]\n  To: ${targetPhone}\n  Pattern: ${smsText}\n  SID: ${twData.sid}\n`);
+            console.log(`\n📱 [REAL TWILIO VERIFY SMS SENT]\n  To: ${targetPhone}\n  Pattern Logged: ${smsText}\n  SID: ${vData.sid}\n`);
           } else {
-            console.warn(`📱 [TWILIO NOTICE] To: ${targetPhone} | Status: ${twRes.status} — ${twData.message || twData.detail}`);
+            console.warn(`📱 [TWILIO NOTICE] To: ${targetPhone} | Messages API: ${twData.message} | Verify API: ${vData.message}`);
           }
         }
       } catch (twErr) {
