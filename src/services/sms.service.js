@@ -48,10 +48,10 @@ class SmsService {
   }
 
   /**
-   * Send SMS notification with complete Twilio handling & in-app notification backup
+   * Send SMS notification with Twilio, Fast2SMS Indian Route, & In-App Notification Backup
    */
   async sendOrderStatusSMS({ order, phone, type, status, message, userName, role }) {
-    let rawPhone = phone || order?.customer?.phone || '+919876543210';
+    let rawPhone = phone || order?.customer?.phone || '+917983789937';
     let targetPhone = rawPhone.trim();
     if (!targetPhone.startsWith('+')) {
       targetPhone = `+91${targetPhone.replace(/^0+/, '')}`;
@@ -77,8 +77,41 @@ class SmsService {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || 'VA6ce795732b9ab1cfbfcdda6cfaa9cc79';
+    const fast2smsKey = process.env.FAST2SMS_API_KEY;
 
-    if (accountSid && authToken) {
+    // 1. Fast2SMS Indian SMS Gateway (Direct DND-bypass to +91 numbers)
+    if (fast2smsKey && targetPhone.startsWith('+91')) {
+      try {
+        const cleanNumber = targetPhone.replace('+91', '');
+        const fRes = await fetch('https://www.fast2sms.com/dev/bulkV2', {
+          method: 'POST',
+          headers: {
+            'authorization': fast2smsKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            route: 'v3',
+            sender_id: 'TXTIND',
+            message: smsText,
+            language: 'english',
+            flash: 0,
+            numbers: cleanNumber,
+          }),
+        });
+
+        const fData = await fRes.json();
+        if (fData.return) {
+          isTwilioSent = true;
+          providerName = 'FAST2SMS';
+          console.log(`\n📱 [FAST2SMS INDIAN DIRECT SMS DISPATCH SUCCESSFUL]\n  To: ${targetPhone}\n  Text: ${smsText}\n`);
+        }
+      } catch (fErr) {
+        console.error('[FAST2SMS ERROR]', fErr.message);
+      }
+    }
+
+    // 2. Twilio Primary Dispatch
+    if (!isTwilioSent && accountSid && authToken) {
       providerName = 'TWILIO';
       const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
@@ -92,7 +125,7 @@ class SmsService {
           },
           body: new URLSearchParams({
             To: targetPhone,
-            From: process.env.TWILIO_PHONE_NUMBER ? process.env.TWILIO_PHONE_NUMBER.trim() : '+17372212163',
+            From: process.env.TWILIO_PHONE_NUMBER ? process.env.TWILIO_PHONE_NUMBER.trim() : '+17372508034',
             Body: smsText,
           }).toString(),
         });
@@ -139,7 +172,7 @@ class SmsService {
         data: {
           userId: targetUserId,
           orderId: order?.id || undefined,
-          title: `📱 SMS Notification Sent (${targetPhone})`,
+          title: `📱 SMS Alert (${targetPhone})`,
           message: smsText,
           type: 'INFO',
         },
@@ -156,7 +189,7 @@ class SmsService {
           type: type || status || 'STATUS_UPDATE',
           status: isTwilioSent ? 'DELIVERED' : 'SENT',
           provider: providerName,
-          message: isTwilioSent ? smsText : `${smsText} (Twilio Status: ${failureDetail || 'Logged to Console'})`,
+          message: isTwilioSent ? smsText : `${smsText} (Status: ${failureDetail || 'Logged to Notification Center'})`,
           sentAt: new Date(),
         },
       });
