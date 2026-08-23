@@ -1,63 +1,77 @@
 const prisma = require('../config/prisma');
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
 class NotificationService {
   constructor() {
-    this.resend = null;
-    this.senderEmail = 'onboarding@resend.dev'; // Works without domain verification
+    this.transporter = null;
     this.initMailer();
   }
 
   initMailer() {
-    const apiKey = process.env.RESEND_API_KEY;
+    // Try Resend SMTP bridge first (works on all cloud hosts via HTTPS/587 alternative)
+    const resendApiKey = process.env.RESEND_API_KEY;
+    const smtpUser = process.env.SMTP_USER || 'saanyagarg400@gmail.com';
+    const smtpPass = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : 'qohyurvvzffqhmpf';
 
-    if (apiKey) {
-      this.resend = new Resend(apiKey);
-      console.log('[MAILER] ✅ Resend Email API Initialized');
+    if (resendApiKey) {
+      // Use Resend's SMTP bridge — works on port 587 with Resend API key as password
+      // This bypasses Render port blocking AND allows sending to any email
+      this.transporter = nodemailer.createTransport({
+        host: 'smtp.resend.com',
+        port: 587,
+        secure: false,
+        auth: {
+          user: 'resend',
+          pass: resendApiKey,
+        },
+      });
+      this.senderEmail = 'onboarding@resend.dev';
+      console.log('[MAILER] ✅ Resend SMTP Bridge Initialized (smtp.resend.com:587)');
+    } else if (smtpUser && smtpPass) {
+      this.transporter = nodemailer.createTransport({
+        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
+        auth: { user: smtpUser, pass: smtpPass },
+        tls: { rejectUnauthorized: false },
+      });
+      this.senderEmail = smtpUser;
+      console.log(`[MAILER] ✅ Gmail SMTP Initialized for ${smtpUser}`);
     } else {
-      console.log('[MAILER] ⚠️  No RESEND_API_KEY configured — emails will be logged to console only');
+      console.log('[MAILER] ⚠️  No email credentials — logging to console only');
     }
   }
 
-  /**
-   * Build rich HTML email template
-   */
   _buildEmailHtml({ title, message, orderNumber, recipientName, statusColor = '#0284c7', ctaText, ctaUrl }) {
     return `<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-</head>
+<head><meta charset="UTF-8"><title>${title}</title></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:32px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
     <tr>
       <td style="background:${statusColor};padding:24px 32px;">
         <p style="margin:0;color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">LAST-MILE DELIVERY TRACKER</p>
-        <h1 style="margin:8px 0 0;color:#ffffff;font-size:22px;font-weight:800;">${title}</h1>
+        <h1 style="margin:8px 0 0;color:#fff;font-size:22px;font-weight:800;">${title}</h1>
       </td>
     </tr>
     <tr>
       <td style="padding:32px;">
         ${recipientName ? `<p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi <strong style="color:#0f172a;">${recipientName}</strong>,</p>` : ''}
         <p style="margin:0 0 24px;color:#334155;font-size:15px;line-height:1.6;">${message}</p>
-        ${orderNumber ? `
-        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:24px;">
+        ${orderNumber ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:24px;">
           <p style="margin:0;color:#64748b;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Order Reference</p>
           <p style="margin:4px 0 0;color:#0f172a;font-size:18px;font-weight:800;font-family:monospace;">${orderNumber}</p>
         </div>` : ''}
-        ${ctaText && ctaUrl ? `
-        <div style="text-align:center;margin:24px 0;">
-          <a href="${ctaUrl}" style="display:inline-block;background:${statusColor};color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:700;font-size:14px;">${ctaText}</a>
+        ${ctaText && ctaUrl ? `<div style="text-align:center;margin:24px 0;">
+          <a href="${ctaUrl}" style="display:inline-block;background:${statusColor};color:#fff;text-decoration:none;padding:12px 28px;border-radius:10px;font-weight:700;font-size:14px;">${ctaText}</a>
         </div>` : ''}
       </td>
     </tr>
     <tr>
       <td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;">
         <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center;">
-          This is an automated notification from Last-Mile Delivery Tracker.<br>
-          Please do not reply to this email.
+          Automated notification from Last-Mile Delivery Tracker. Do not reply to this email.
         </p>
       </td>
     </tr>
@@ -67,19 +81,15 @@ class NotificationService {
   }
 
   _getStatusColor(title) {
-    const map = {
-      'Confirmed': '#10b981', 'Assigned': '#0284c7', 'Picked': '#8b5cf6',
-      'Transit': '#f59e0b', 'Delivery': '#f97316', 'Delivered': '#10b981',
-      'Failed': '#ef4444', 'Rescheduled': '#06b6d4', 'Welcome': '#6366f1',
-      'Sign-In': '#64748b', 'Alert': '#64748b',
-    };
-    const key = Object.keys(map).find(k => title.includes(k));
-    return map[key] || '#0284c7';
+    if (title.includes('Confirmed') || title.includes('Delivered') || title.includes('Welcome')) return '#10b981';
+    if (title.includes('Transit') || title.includes('Pickup')) return '#f59e0b';
+    if (title.includes('Delivery') && title.includes('Out')) return '#f97316';
+    if (title.includes('Failed')) return '#ef4444';
+    if (title.includes('Rescheduled')) return '#06b6d4';
+    if (title.includes('Sign-In') || title.includes('Alert')) return '#64748b';
+    return '#0284c7';
   }
 
-  /**
-   * Main notification handler
-   */
   async notifyUser({ userId, recipientEmail, orderId, title, message, type = 'INFO' }) {
     let notif = null;
     try {
@@ -90,7 +100,7 @@ class NotificationService {
         }).catch(() => null);
       }
 
-      // 2. Log to NotificationLog table
+      // 2. Log to NotificationLog
       await prisma.notificationLog.create({
         data: {
           orderId: orderId || undefined,
@@ -98,16 +108,15 @@ class NotificationService {
           channel: 'EMAIL',
           type,
           status: 'SENT',
-          provider: 'RESEND_API',
+          provider: process.env.RESEND_API_KEY ? 'RESEND_SMTP' : 'GMAIL_SMTP',
           message: `${title}: ${message}`,
           sentAt: new Date(),
         },
       }).catch(() => {});
 
-      // 3. Get target email
+      // 3. Resolve recipient email
       const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
       const targetEmail = recipientEmail || user?.email;
-
       if (!targetEmail) return notif;
 
       const order = orderId ? await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } }) : null;
@@ -121,24 +130,22 @@ class NotificationService {
         ctaUrl: order ? `${process.env.FRONTEND_URL || 'https://lastmiledelivery-iou3.onrender.com'}/customer/orders/${orderId}` : undefined,
       });
 
-      // 4. Send via Resend HTTPS API (no SMTP port blocking)
-      if (this.resend) {
-        const { data, error } = await this.resend.emails.send({
-          from: `Last-Mile Tracker <${this.senderEmail}>`,
-          to: [targetEmail],
-          subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
-          text: message,
-          html: htmlBody,
-        });
-
-        if (error) {
-          console.error(`❌ [RESEND ERROR] To: ${targetEmail} | Error:`, error.message || JSON.stringify(error));
-        } else {
-          console.log(`📧 [RESEND SENT] To: ${targetEmail} | Subject: ${title} | ID: ${data?.id}`);
+      // 4. Send email
+      if (this.transporter) {
+        try {
+          const info = await this.transporter.sendMail({
+            from: `"Last-Mile Tracker" <${this.senderEmail}>`,
+            to: targetEmail,
+            subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
+            text: message,
+            html: htmlBody,
+          });
+          console.log(`📧 [EMAIL SENT] To: ${targetEmail} | Subject: ${title} | ID: ${info.messageId}`);
+        } catch (mailErr) {
+          console.error(`❌ [EMAIL ERROR] To: ${targetEmail} | ${mailErr.message}`);
         }
       } else {
-        // Fallback: log to console
-        console.log(`\n📧 [EMAIL LOG - NO API KEY]\n  To: ${targetEmail}\n  Subject: ${title}\n  Body: ${message}\n`);
+        console.log(`📧 [EMAIL LOG] To: ${targetEmail} | Subject: ${title} | ${message}`);
       }
 
       return notif;

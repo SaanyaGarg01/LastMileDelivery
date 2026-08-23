@@ -28,10 +28,12 @@ class HealthService {
 
     const apiResponseTimeMs = Date.now() - startTime;
 
+    const resendKey = process.env.RESEND_API_KEY || null;
     const smtpUser = process.env.SMTP_USER || null;
     const smtpPass = process.env.SMTP_PASS || null;
-    const smtpStatus = smtpUser && smtpPass ? 'Configured' : 'NOT_CONFIGURED';
-    const smtpInfo = smtpUser ? `Gmail SMTP (${smtpUser})` : 'No SMTP_USER env var found';
+    const emailConfigured = resendKey || (smtpUser && smtpPass);
+    const emailProvider = resendKey ? `Resend SMTP Bridge (smtp.resend.com:587)` : smtpUser ? `Gmail SMTP (${smtpUser})` : 'NOT CONFIGURED';
+    const emailStatus = emailConfigured ? 'Configured' : 'NOT_CONFIGURED';
 
     return {
       status: dbStatus === 'Operational' ? 'HEALTHY' : 'DEGRADED',
@@ -39,7 +41,7 @@ class HealthService {
       services: {
         backendApi: { status: 'Operational', latencyMs: apiResponseTimeMs },
         database: { status: dbStatus, latencyMs: dbLatencyMs, engine: 'SQLite' },
-        emailService: { status: smtpStatus, provider: smtpInfo, smtpUser: smtpUser || 'MISSING' },
+        emailService: { status: emailStatus, provider: emailProvider },
         notificationQueue: { status: 'Operational', totalProcessed: notificationsCount },
         mapService: { status: 'Operational (OpenStreetMap / Leaflet CDN)', provider: 'OpenStreetMap' },
       },
