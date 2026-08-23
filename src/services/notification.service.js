@@ -8,21 +8,24 @@ class NotificationService {
   }
 
   initMailer() {
-    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-    const smtpUser = process.env.SMTP_USER;
-    const smtpPass = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : '';
+    const smtpUser = process.env.SMTP_USER || 'saanyagarg400@gmail.com';
+    const smtpPass = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : 'qohyurvvzffqhmpf';
 
     if (smtpUser && smtpPass) {
       this.transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: Number(process.env.SMTP_PORT) || 587,
-        secure: false,
+        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: smtpUser,
           pass: smtpPass,
         },
+        tls: {
+          rejectUnauthorized: false,
+        },
       });
-      console.log(`[MAILER] Real Gmail SMTP Mailer Initialized for ${smtpUser}`);
+      console.log(`[MAILER] Real Gmail SMTP Transporter Initialized for ${smtpUser}`);
     } else {
       console.log('[MAILER] No SMTP credentials configured — email notifications will be logged to console');
     }
@@ -109,22 +112,23 @@ class NotificationService {
   async notifyUser({ userId, recipientEmail, orderId, title, message, type = 'INFO' }) {
     let notif = null;
     try {
-      // 1. Store in-app notification
-      notif = await prisma.notification.create({
-        data: {
-          userId,
-          orderId: orderId || undefined,
-          title,
-          message,
-          type,
-        },
-      });
+      if (userId) {
+        notif = await prisma.notification.create({
+          data: {
+            userId,
+            orderId: orderId || undefined,
+            title,
+            message,
+            type,
+          },
+        }).catch(() => null);
+      }
 
       // Log Notification in NotificationLog
       await prisma.notificationLog.create({
         data: {
           orderId: orderId || undefined,
-          userId,
+          userId: userId || undefined,
           channel: 'EMAIL',
           type,
           status: 'SENT',
@@ -134,9 +138,10 @@ class NotificationService {
         },
       }).catch(() => {});
 
-      // 2. Get user info for email delivery
+      // Get user info for email delivery
       const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
-      const targetEmail = recipientEmail || user?.email;
+      const targetEmail = recipientEmail || user?.email || process.env.SMTP_USER;
+
       if (!targetEmail) return notif;
 
       const { statusColor } = this._getStatusEmailConfig(title);
@@ -152,23 +157,23 @@ class NotificationService {
         ctaUrl: order ? `${process.env.FRONTEND_URL || 'http://localhost:5173'}/customer/orders/${orderId}` : undefined,
       });
 
-      // 3. Send real email via Gmail SMTP
+      // Send real email via Gmail SMTP (service: 'gmail' SSL port 465)
       if (this.transporter) {
-        try {
-          const info = await this.transporter.sendMail({
-            from: `"Last-Mile Tracker" <${process.env.SMTP_USER}>`,
-            to: targetEmail,
-            subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
-            text: message,
-            html: htmlBody,
-          });
+        const mailOptions = {
+          from: `"Last-Mile Tracker" <${process.env.SMTP_USER || 'saanyagarg400@gmail.com'}>`,
+          to: targetEmail,
+          subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
+          text: message,
+          html: htmlBody,
+        };
 
-          console.log(`📧 [GMAIL SENT SUCCESSFUL] To: ${targetEmail} | Subject: ${title} | MsgID: ${info.messageId}`);
-        } catch (mailErr) {
-          console.error('❌ [GMAIL SENDING ERROR]', mailErr.message);
-        }
-      } else {
-        console.log(`\n[EMAIL LOG]\n  To: ${targetEmail}\n  Subject: ${title}\n  Body: ${message}\n`);
+        this.transporter.sendMail(mailOptions, (err, info) => {
+          if (err) {
+            console.error('❌ [GMAIL CLOUD SEND ERROR]', err.message);
+          } else {
+            console.log(`📧 [GMAIL CLOUD SENT SUCCESSFUL] To: ${targetEmail} | Subject: ${title} | MsgID: ${info.messageId}`);
+          }
+        });
       }
 
       return notif;
