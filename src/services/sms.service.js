@@ -48,7 +48,7 @@ class SmsService {
   }
 
   /**
-   * Send SMS notification for order status update / Auth alerts via Twilio
+   * Send SMS notification with complete Twilio handling & in-app notification backup
    */
   async sendOrderStatusSMS({ order, phone, type, status, message, userName, role }) {
     let rawPhone = phone || order?.customer?.phone || '+919876543210';
@@ -72,6 +72,7 @@ class SmsService {
 
     let isTwilioSent = false;
     let providerName = 'DEV_CONSOLE';
+    let failureDetail = null;
 
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
@@ -82,7 +83,7 @@ class SmsService {
       const auth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 
       try {
-        // 1. Try standard Messages REST API first to send custom branded text
+        // 1. Try standard Messages REST API first
         const twRes = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
           method: 'POST',
           headers: {
@@ -100,9 +101,10 @@ class SmsService {
 
         if (twRes.ok) {
           isTwilioSent = true;
-          console.log(`\n📱 [REAL TWILIO CUSTOM SMS SENT]\n  To: ${targetPhone}\n  Text: ${smsText}\n  SID: ${twData.sid}\n`);
+          console.log(`\n📱 [TWILIO CUSTOM SMS SENT SUCCESSFUL]\n  To: ${targetPhone}\n  Text: ${smsText}\n  SID: ${twData.sid}\n`);
         } else {
-          // 2. Fallback to Twilio Verify API if TRAI DLT template error 572006 occurs for Indian numbers
+          failureDetail = twData.message || twData.detail;
+          // 2. Fallback to Twilio Verify API
           const vRes = await fetch(`https://verify.twilio.com/v2/Services/${verifyServiceSid}/Verifications`, {
             method: 'POST',
             headers: {
@@ -118,36 +120,48 @@ class SmsService {
           const vData = await vRes.json();
           if (vRes.ok) {
             isTwilioSent = true;
-            console.log(`\n📱 [REAL TWILIO VERIFY SMS SENT]\n  To: ${targetPhone}\n  Pattern Logged: ${smsText}\n  SID: ${vData.sid}\n`);
+            console.log(`\n📱 [TWILIO VERIFY SMS SENT SUCCESSFUL]\n  To: ${targetPhone}\n  Pattern Logged: ${smsText}\n  SID: ${vData.sid}\n`);
           } else {
-            console.warn(`📱 [TWILIO NOTICE] To: ${targetPhone} | Messages API: ${twData.message} | Verify API: ${vData.message}`);
+            failureDetail = `Twilio Error ${vData.code || twData.code}: ${vData.message || twData.message}`;
+            console.warn(`📱 [TWILIO NOTICE] To: ${targetPhone} | ${failureDetail}`);
           }
         }
       } catch (twErr) {
-        console.error('[TWILIO API ERROR]', twErr.message);
+        console.error('[TWILIO API EXCEPTION]', twErr.message);
+        failureDetail = twErr.message;
       }
     }
 
-    if (!isTwilioSent) {
-      console.log(`\n📱 [DESIGNED SMS PATTERN LOGGED]\n  To: ${targetPhone}\n  Text: ${smsText}\n`);
+    // Always create an In-App Notification so SMS alerts show up in real-time on screen
+    const targetUserId = order?.customerId || (order?.customer?.id);
+    if (targetUserId) {
+      await prisma.notification.create({
+        data: {
+          userId: targetUserId,
+          orderId: order?.id || undefined,
+          title: `📱 SMS Notification Sent (${targetPhone})`,
+          message: smsText,
+          type: 'INFO',
+        },
+      }).catch(() => {});
     }
 
     try {
-      // Log notification in database
+      // Log notification in NotificationLog table
       await prisma.notificationLog.create({
         data: {
           orderId: order?.id || undefined,
-          userId: order?.customerId || undefined,
+          userId: targetUserId || undefined,
           channel: 'SMS',
           type: type || status || 'STATUS_UPDATE',
           status: isTwilioSent ? 'DELIVERED' : 'SENT',
           provider: providerName,
-          message: smsText,
+          message: isTwilioSent ? smsText : `${smsText} (Twilio Status: ${failureDetail || 'Logged to Console'})`,
           sentAt: new Date(),
         },
       });
 
-      return { success: true, smsText };
+      return { success: true, isTwilioSent, smsText, failureDetail };
     } catch (err) {
       console.error('[SMS LOGGING ERROR]', err.message);
       return { success: false, error: err.message };
