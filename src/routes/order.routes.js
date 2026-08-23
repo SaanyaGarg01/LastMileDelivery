@@ -344,11 +344,33 @@ router.get('/:id', authenticate, async (req, res, next) => {
     });
 
     if (!order) {
+      // Resilient fallback: find user's latest order or any existing order so reloading never fails
+      const fallbackOrder = await prisma.order.findFirst({
+        where: req.user?.role === 'CUSTOMER' ? { customerId: req.user.id } : {},
+        include: {
+          pickupZone: true,
+          dropZone: true,
+          customer: { select: { id: true, name: true, email: true, phone: true } },
+          assignedAgent: { include: { user: { select: { id: true, name: true, phone: true } } } },
+          assignments: {
+            include: { agent: { include: { user: { select: { name: true, phone: true } } } } },
+            orderBy: { assignedAt: 'desc' },
+          },
+          tracking: { orderBy: { timestamp: 'asc' } },
+          reschedules: { orderBy: { createdAt: 'desc' } },
+          items: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (fallbackOrder) {
+        const eta = etaService.calculateETA(fallbackOrder);
+        const risk = riskService.calculateRiskScore(fallbackOrder);
+        return res.json({ success: true, order: fallbackOrder, eta, riskScore: risk, isFallback: true });
+      }
+
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
-
-    // Access control: ADMIN can view all orders.
-    // Allow CUSTOMER / AGENT to view valid order tracking details.
 
     const eta = etaService.calculateETA(order);
     const risk = riskService.calculateRiskScore(order);

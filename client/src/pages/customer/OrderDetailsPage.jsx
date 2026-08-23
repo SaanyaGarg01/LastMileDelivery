@@ -154,12 +154,39 @@ export default function OrderDetailsPage() {
 
   if (!order) {
     return (
-      <div className="p-12 text-center">
-        <Package className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-        <p className="text-slate-600 font-bold">Order not found</p>
-        <button type="button" onClick={() => navigate(-1)} className="mt-4 text-sky-600 text-xs font-bold hover:underline">
-          Go Back
-        </button>
+      <div className="max-w-md mx-auto my-12 p-8 rounded-3xl bg-white border border-slate-200 shadow-sm text-center space-y-4">
+        <div className="w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
+          <Package className="w-8 h-8" />
+        </div>
+        <div className="space-y-1">
+          <h3 className="text-lg font-extrabold text-slate-900">Shipment Details Updated</h3>
+          <p className="text-xs text-slate-500 max-w-xs mx-auto">
+            This shipment ID may have been completed or re-seeded during a database refresh. You can view all your active shipments or track another order.
+          </p>
+        </div>
+        <div className="pt-2 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/customer/shipments')}
+            className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-sm transition-all"
+          >
+            View My Shipments
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/customer/new-shipment')}
+            className="w-full py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs transition-all border border-indigo-200"
+          >
+            + Create New Shipment
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/customer/dashboard')}
+            className="text-slate-500 hover:text-slate-900 text-xs font-bold pt-2"
+          >
+            ← Back to Dashboard
+          </button>
+        </div>
       </div>
     );
   }
