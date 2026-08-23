@@ -28,13 +28,18 @@ class HealthService {
 
     const apiResponseTimeMs = Date.now() - startTime;
 
+    const smtpUser = process.env.SMTP_USER || null;
+    const smtpPass = process.env.SMTP_PASS || null;
+    const smtpStatus = smtpUser && smtpPass ? 'Configured' : 'NOT_CONFIGURED';
+    const smtpInfo = smtpUser ? `Gmail SMTP (${smtpUser})` : 'No SMTP_USER env var found';
+
     return {
       status: dbStatus === 'Operational' ? 'HEALTHY' : 'DEGRADED',
       timestamp: new Date(),
       services: {
         backendApi: { status: 'Operational', latencyMs: apiResponseTimeMs },
         database: { status: dbStatus, latencyMs: dbLatencyMs, engine: 'SQLite' },
-        emailService: { status: 'Configuration Present (Console Log Mode)', mode: 'DEV_LOG' },
+        emailService: { status: smtpStatus, provider: smtpInfo, smtpUser: smtpUser || 'MISSING' },
         notificationQueue: { status: 'Operational', totalProcessed: notificationsCount },
         mapService: { status: 'Operational (OpenStreetMap / Leaflet CDN)', provider: 'OpenStreetMap' },
       },

@@ -59,25 +59,9 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
       });
     }
 
-    // Send Welcome Email & SMS Notifications
-    notificationService.notifyUser({
-      userId: user.id,
-      recipientEmail: user.email,
-      title: '🎉 Welcome to Last-Mile Delivery Tracker!',
-      message: `Hi ${user.name}, thank you for registering your ${user.role} account with Last-Mile Tracker.`,
-      type: 'SUCCESS',
-    }).catch(() => {});
-
-    smsService.sendOrderStatusSMS({
-      order: { id: null, customerId: user.id },
-      phone: user.phone,
-      type: 'WELCOME',
-      status: 'REGISTERED',
-      message: `Last-Mile Tracker: Welcome ${user.name}! Your ${user.role} account has been registered successfully.`,
-    }).catch(() => {});
-
     const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
+    // Respond to client immediately — don't block on email/SMS
     res.status(201).json({
       success: true,
       message: 'Registration successful',
@@ -90,6 +74,30 @@ router.post('/register', validate(registerSchema), async (req, res, next) => {
         role: user.role,
       },
     });
+
+    // Send Welcome Email & SMS asynchronously after response
+    notificationService.notifyUser({
+      userId: user.id,
+      recipientEmail: user.email,
+      title: '🎉 Welcome to Last-Mile Delivery Tracker!',
+      message: `Hi ${user.name}, thank you for registering your ${user.role} account with Last-Mile Tracker. You can now track live deliveries and manage your shipments in real time.`,
+      type: 'SUCCESS',
+    }).then(() => {
+      console.log(`📧 [REGISTER] Welcome email sent to ${user.email}`);
+    }).catch((err) => {
+      console.error(`❌ [REGISTER] Welcome email failed for ${user.email}:`, err.message);
+    });
+
+    smsService.sendOrderStatusSMS({
+      order: { id: null, customerId: user.id },
+      phone: user.phone,
+      type: 'WELCOME',
+      status: 'REGISTERED',
+      message: `Last-Mile Tracker: Welcome ${user.name}! Your ${user.role} account has been registered successfully.`,
+    }).catch((err) => {
+      console.error(`❌ [REGISTER] Welcome SMS failed for ${user.phone}:`, err.message);
+    });
+
   } catch (error) {
     next(error);
   }
@@ -114,25 +122,9 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // Send Sign In Security Alert Email & SMS Notifications
-    notificationService.notifyUser({
-      userId: user.id,
-      recipientEmail: user.email,
-      title: '🔐 Successful Sign-In Alert',
-      message: `Hi ${user.name}, you logged in to your ${user.role} account on ${new Date().toLocaleString()}.`,
-      type: 'INFO',
-    }).catch(() => {});
-
-    smsService.sendOrderStatusSMS({
-      order: { id: null, customerId: user.id },
-      phone: user.phone,
-      type: 'LOGIN_ALERT',
-      status: 'LOGIN',
-      message: `Last-Mile Tracker: Security Alert — Account login detected at ${new Date().toLocaleTimeString()}.`,
-    }).catch(() => {});
-
     const token = jwt.sign({ userId: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
+    // Respond immediately — don't block on email/SMS
     res.json({
       success: true,
       token,
@@ -145,6 +137,30 @@ router.post('/login', validate(loginSchema), async (req, res, next) => {
         agentProfile: user.agentProfile || null,
       },
     });
+
+    // Send Sign In Alert Email & SMS asynchronously after response
+    notificationService.notifyUser({
+      userId: user.id,
+      recipientEmail: user.email,
+      title: '🔐 Successful Sign-In Alert',
+      message: `Hi ${user.name}, you logged in to your ${user.role} account on ${new Date().toLocaleString()}.`,
+      type: 'INFO',
+    }).then(() => {
+      console.log(`📧 [LOGIN] Sign-in alert email sent to ${user.email}`);
+    }).catch((err) => {
+      console.error(`❌ [LOGIN] Sign-in email failed for ${user.email}:`, err.message);
+    });
+
+    smsService.sendOrderStatusSMS({
+      order: { id: null, customerId: user.id },
+      phone: user.phone,
+      type: 'LOGIN_ALERT',
+      status: 'LOGIN',
+      message: `Last-Mile Tracker: Security Alert — Account login detected at ${new Date().toLocaleTimeString()}.`,
+    }).catch((err) => {
+      console.error(`❌ [LOGIN] Sign-in SMS failed for ${user.phone}:`, err.message);
+    });
+
   } catch (error) {
     next(error);
   }
