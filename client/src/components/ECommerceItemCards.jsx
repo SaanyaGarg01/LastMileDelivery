@@ -1,11 +1,37 @@
 import React from 'react';
-import { Package, ShieldCheck, HelpCircle, AlertCircle, ArrowRight, RotateCcw, Truck, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Package, ShieldCheck, HelpCircle, AlertCircle, ArrowRight, RotateCcw, Truck, CheckCircle2, ChevronDown, Smartphone, Shirt, FileText, ShoppingBag } from 'lucide-react';
 
 export default function ECommerceItemCards({ order, onReschedule, onCancel }) {
-  // Sample products mapped dynamically to the order
+  // Use real order items from database if available, otherwise map sample items
+  const dynamicItems = (order.items && order.items.length > 0)
+    ? order.items.map((item, idx) => {
+        const cat = (item.category || '').toLowerCase();
+        const nameLower = (item.name || '').toLowerCase();
+        let itemImage = '/images/earbuds.jpg';
+
+        if (cat.includes('fashion') || cat.includes('apparel') || cat.includes('clothing') || nameLower.includes('hoodie') || nameLower.includes('shirt') || nameLower.includes('shoe')) {
+          itemImage = '/images/hoodie.jpg';
+        } else if (cat.includes('electronics') || nameLower.includes('bud') || nameLower.includes('headphone') || nameLower.includes('phone') || nameLower.includes('laptop')) {
+          itemImage = '/images/earbuds.jpg';
+        }
+
+        return {
+          id: item.id || `dyn-item-${idx}`,
+          name: item.name || 'Shipment Package Item',
+          color: item.category ? `Category: ${item.category}` : 'Verified Parcel Item',
+          seller: order.orderType === 'B2B' ? 'Enterprise B2B Hub' : 'Verified Direct Merchant',
+          price: `₹${(item.declaredValue || (order.totalAmount / order.items.length)).toLocaleString('en-IN')}`,
+          quantity: item.quantity || 1,
+          image: itemImage,
+          category: item.category || 'General Cargo',
+        };
+      })
+    : null;
+
+  // Sample fallback products if order has no specified item array
   const isEarbuds = (order.orderNumber || '').includes('1002') || (order.id || '').charCodeAt(0) % 2 === 0;
 
-  const items = isEarbuds
+  const fallbackItems = isEarbuds
     ? [
         {
           id: 'item-1',
@@ -40,6 +66,8 @@ export default function ECommerceItemCards({ order, onReschedule, onCancel }) {
         },
       ];
 
+  const itemsToDisplay = dynamicItems || fallbackItems;
+
   // Horizontal step progress calculation
   const statusSteps = [
     { label: 'Ordered', status: 'CREATED', date: new Date(order.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) },
@@ -58,11 +86,11 @@ export default function ECommerceItemCards({ order, onReschedule, onCancel }) {
 
   return (
     <div className="space-y-6">
-      {/* Horizontal Package Status Bar (Matching Image 1 & Image 2) */}
+      {/* Horizontal Package Status Bar */}
       <div className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-extrabold text-base text-slate-900">Package Status (1/1)</h3>
+            <h3 className="font-extrabold text-base text-slate-900">Package Status ({itemsToDisplay.length}/{itemsToDisplay.length})</h3>
             <p className="text-xs text-slate-400">Standard Delivery • Guaranteed SLA</p>
           </div>
           <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-extrabold flex items-center gap-1.5">
@@ -104,10 +132,18 @@ export default function ECommerceItemCards({ order, onReschedule, onCancel }) {
         </div>
       </div>
 
-      {/* Product Items List (Matching Image 1 & Image 2) */}
+      {/* Product Items List (Dynamic Items Display) */}
       <div className="space-y-3">
-        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">PARCEL ITEMS IN THIS SHIPMENT</span>
-        {items.map((item) => (
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">PARCEL ITEMS IN THIS SHIPMENT</span>
+          {dynamicItems && (
+            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+              ⚡ Live Input Items Verified
+            </span>
+          )}
+        </div>
+
+        {itemsToDisplay.map((item) => (
           <div key={item.id} className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <img
@@ -133,7 +169,7 @@ export default function ECommerceItemCards({ order, onReschedule, onCancel }) {
         ))}
       </div>
 
-      {/* Safety & Customer Issue Banners (Matching Image 2) */}
+      {/* Safety & Customer Issue Banners */}
       <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-sky-600 text-white shrink-0">
@@ -153,7 +189,7 @@ export default function ECommerceItemCards({ order, onReschedule, onCancel }) {
         </button>
       </div>
 
-      {/* Customer Support & Issues Card (Matching Image 2) */}
+      {/* Customer Support & Issues Card */}
       <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-sm space-y-3">
         <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">DELIVERY ISSUES & CUSTOMER HELP</span>
         <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
