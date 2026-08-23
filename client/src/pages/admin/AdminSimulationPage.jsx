@@ -258,4 +258,6 @@ export default function AdminSimulationPage() {
           </div>
         </div>
       )}
-    </di
+    </div>
+  );
+}
