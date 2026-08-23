@@ -1,6 +1,6 @@
 async function testRegisterEmail() {
-  const testEmail = 'saanyagarg400@gmail.com';
-  console.log(`Testing Registration email sending to: ${testEmail}...`);
+  const testEmail = `saanya.test.${Date.now()}@gmail.com`;
+  console.log(`Testing Registration with email: ${testEmail}...`);
 
   try {
     const res = await fetch('http://localhost:5000/api/auth/register', {
