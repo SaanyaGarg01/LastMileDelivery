@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Login · Delivery Tracker</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<div class="container login-wrap">
+  <div class="card">
+    <h1>Sign in</h1>
+    <p class="muted">Customer, delivery agent, or admin — use the same login.</p>
+    <form id="loginForm">
+      <label>Email</label>
+      <input type="email" id="email" required />
+      <label>Password</label>
+      <input type="password" id="password" required />
+      <div style="margin-top:16px">
+        <button class="btn" type="submit">Sign in</button>
+      </div>
+      <div id="err" class="error"></div>
+    </form>
+    <p class="hint" style="margin-top:16px">
+      New customer? <a href="/pages/register.html">Create an account</a>
+    </p>
+    <p class="hint">
+      Demo logins — Admin: admin@delivery.test / Admin@123 &nbsp;·&nbsp;
+      Agent: raj.agent@delivery.test / Agent@123
+    </p>
+  </div>
+</div>
+<script src="/js/api.js"></script>
+<script>
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const errEl = document.getElementById('err');
+    errEl.textContent = '';
+    try {
+      const data = await api('/auth/login', { method: 'POST', body: { email, password }, auth: false });
+      setSession(data);
+      if (data.user.role === 'admin') window.location.href = '/pages/admin.html';
+      else if (data.user.role === 'agent') window.location.href = '/pages/agent.html';
+      else window.location.href = '/pages/customer.html';
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Agent Dashboard · Delivery Tracker</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<div class="container">
+  <div class="card">
+    <h2>Availability</h2>
+    <label><input type="checkbox" id="availToggle" style="width:auto;display:inline-block;margin-right:8px" /> I am available for new deliveries</label>
+    <div id="availMsg" class="success"></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <h2>My assigned orders</h2>
+    <table id="ordersTable">
+      <thead><tr><th>Order</th><th>Pickup</th><th>Drop</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="detailCard" style="display:none; margin-top:16px"></div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+const session = requireSession(['agent']);
+renderTopbar();
+
+const NEXT_STATUS = {
+  'Assigned': 'Picked Up',
+  'Picked Up': 'In Transit',
+  'In Transit': 'Out for Delivery',
+  'Out for Delivery': 'Delivered',
+};
+
+document.getElementById('availToggle').addEventListener('change', async (e) => {
+  const msg = document.getElementById('availMsg');
+  try {
+    await api('/agents/me', { method: 'PATCH', body: { is_available: e.target.checked } });
+    msg.textContent = e.target.checked ? 'You are marked available.' : 'You are marked unavailable.';
+  } catch (err) {
+    msg.textContent = err.message;
+  }
+});
+
+async function loadOrders() {
+  const orders = await api('/agents/me/orders');
+  const tbody = document.querySelector('#ordersTable tbody');
+  tbody.innerHTML = orders.map(o => {
+    const next = NEXT_STATUS[o.status];
+    return `
+    <tr>
+      <td>${o.order_code}</td>
+      <td>${o.pickup_address}</td>
+      <td>${o.drop_address}</td>
+      <td><span class="badge ${statusClass(o.status)}">${o.status}</span></td>
+      <td>
+        ${next ? `<button class="btn small" onclick="updateStatus(${o.id}, '${next}')">Mark ${next}</button>` : ''}
+        ${['Picked Up','In Transit','Out for Delivery'].includes(o.status) ? `<button class="btn small danger" onclick="updateStatus(${o.id}, 'Failed')">Mark Failed</button>` : ''}
+        <button class="btn small secondary" onclick="viewOrder(${o.id})">View</button>
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">No orders assigned to you yet.</td></tr>';
+}
+
+async function updateStatus(id, status) {
+  try {
+    await api(`/orders/${id}/status`, { method: 'PATCH', body: { status } });
+    loadOrders();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function viewOrder(id) {
+  const o = await api('/orders/' + id);
+  const card = document.getElementById('detailCard');
+  card.style.display = '';
+  card.innerHTML = `
+    <h3>${o.order_code} <span class="badge ${statusClass(o.status)}">${o.status}</span></h3>
+    <p><b>Pickup:</b> ${o.pickup_address}</p>
+    <p><b>Drop:</b> ${o.drop_address}</p>
+    <p><b>Package:</b> ${o.length_cm}x${o.breadth_cm}x${o.height_cm} cm, ${o.actual_weight_kg} kg actual / ${o.billed_weight_kg} kg billed</p>
+    <p><b>Payment:</b> ${o.payment_type} &nbsp; <b>Total:</b> ${fmtMoney(o.total_charge)}</p>
+    <h4>Tracking timeline</h4>
+    <ul class="timeline">
+      ${o.history.map(h => `<li><b>${h.status}</b> <span class="muted">— ${fmtDate(h.created_at)}</span>${h.notes ? `<br/><span class="muted">${h.notes}</span>` : ''}</li>`).join('')}
+    </ul>
+  `;
+}
+
+(async function init() {
+  const me = await api('/agents/me/orders'); // triggers 403 redirect if not agent, harmless otherwise
+  loadOrders();
+})();
+</script>
+</body>
+</html>

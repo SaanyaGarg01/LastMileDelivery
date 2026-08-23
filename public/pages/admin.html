@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Admin Dashboard · Delivery Tracker</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<div class="container">
+  <div class="tabs">
+    <button class="tabbtn active" data-tab="orders">Orders</button>
+    <button class="tabbtn" data-tab="zones">Zones</button>
+    <button class="tabbtn" data-tab="rates">Rate Cards</button>
+    <button class="tabbtn" data-tab="agents">Agents &amp; Users</button>
+    <button class="tabbtn" data-tab="neworder">New Order (on behalf)</button>
+  </div>
+
+  <!-- ORDERS -->
+  <div id="tab-orders">
+    <div class="card">
+      <h2>All orders</h2>
+      <div class="pill-row">
+        <select id="fStatus"><option value="">All statuses</option></select>
+        <select id="fZone"><option value="">All zones</option></select>
+        <select id="fAgent"><option value="">All agents</option></select>
+        <button class="btn small secondary" onclick="loadOrders()">Filter</button>
+      </div>
+      <table id="ordersTable">
+        <thead><tr><th>Order</th><th>Customer</th><th>Type</th><th>Total</th><th>Status</th><th>Agent</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card" id="detailCard" style="display:none; margin-top:16px"></div>
+  </div>
+
+  <!-- ZONES -->
+  <div id="tab-zones" style="display:none">
+    <div class="two-col">
+      <div class="card">
+        <h2>Zones</h2>
+        <div id="zoneList"></div>
+        <hr/>
+        <h3>Add zone</h3>
+        <input id="newZoneName" placeholder="Zone name" />
+        <button class="btn" style="margin-top:8px" onclick="addZone()">Add zone</button>
+        <div id="zoneErr" class="error"></div>
+      </div>
+      <div class="card">
+        <h2>Map area to zone</h2>
+        <label>Zone</label>
+        <select id="areaZoneSelect"></select>
+        <label>Area name or pincode</label>
+        <input id="areaName" placeholder="e.g. moradabad or 244001" />
+        <button class="btn" style="margin-top:8px" onclick="addArea()">Map area</button>
+        <p class="hint">Area matching is case-insensitive and used to auto-detect pickup/drop zones from the address text.</p>
+        <div id="areaErr" class="error"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RATE CARDS -->
+  <div id="tab-rates" style="display:none">
+    <div class="card">
+      <h2>Rate cards (per order type × route type)</h2>
+      <table>
+        <thead><tr><th>Order type</th><th>Route</th><th>Base price</th><th>Rate/kg</th><th>Min charge</th><th></th></tr></thead>
+        <tbody id="rateCardsBody"></tbody>
+      </table>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>COD surcharge config</h2>
+      <table>
+        <thead><tr><th>Order type</th><th>Flat fee</th><th>% of freight</th><th></th></tr></thead>
+        <tbody id="codBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- AGENTS -->
+  <div id="tab-agents" style="display:none">
+    <div class="two-col">
+      <div class="card">
+        <h2>Delivery agents</h2>
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Zone</th><th>Available</th></tr></thead>
+          <tbody id="agentsBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h2>Create agent / admin user</h2>
+        <label>Name</label><input id="uName" />
+        <label>Email</label><input id="uEmail" type="email" />
+        <label>Password</label><input id="uPass" type="password" />
+        <label>Role</label>
+        <select id="uRole"><option value="agent">agent</option><option value="admin">admin</option></select>
+        <label>Home zone (for agents)</label>
+        <select id="uZone"></select>
+        <button class="btn" style="margin-top:10px" onclick="createUser()">Create user</button>
+        <div id="userErr" class="error"></div>
+        <div id="userOk" class="success"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW ORDER ON BEHALF -->
+  <div id="tab-neworder" style="display:none">
+    <div class="two-col">
+      <div class="card">
+        <h2>Place order on behalf of a customer</h2>
+        <label>Customer email (must already be registered)</label>
+        <input id="custEmail" type="email" />
+        <label>Pickup address</label>
+        <textarea id="pickupAddress"></textarea>
+        <label>Drop address</label>
+        <textarea id="dropAddress"></textarea>
+        <div class="row">
+          <div><label>Length (cm)</label><input type="number" id="lengthCm" /></div>
+          <div><label>Breadth (cm)</label><input type="number" id="breadthCm" /></div>
+          <div><label>Height (cm)</label><input type="number" id="heightCm" /></div>
+        </div>
+        <label>Actual weight (kg)</label>
+        <input type="number" id="actualWeightKg" />
+        <div class="row">
+          <div><label>Order type</label><select id="orderType"><option>B2C</option><option>B2B</option></select></div>
+          <div><label>Payment type</label><select id="paymentType"><option>Prepaid</option><option>COD</option></select></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn secondary" type="button" onclick="previewAdmin()">Preview charge</button>
+          <button class="btn" type="button" onclick="submitAdminOrder()">Place order</button>
+        </div>
+        <div id="adminOrderErr" class="error"></div>
+        <div id="adminOrderOk" class="success"></div>
+      </div>
+      <div class="card" id="adminChargeCard" style="display:none">
+        <h3>Charge breakdown</h3>
+        <div class="charge-box" id="adminChargeBreakdown"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+const session = requireSession(['admin']);
+renderTopbar();
+
+const STATUSES = ['Created','Assigned','Picked Up','In Transit','Out for Delivery','Delivered','Failed','Rescheduled','Cancelled'];
+
+document.querySelectorAll('.tabbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabbtn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    ['orders','zones','rates','agents','neworder'].forEach(t => {
+      document.getElementById('tab-' + t).style.display = (btn.dataset.tab === t) ? '' : 'none';
+    });
+    if (btn.dataset.tab === 'orders') loadOrders();
+    if (btn.dataset.tab === 'zones') loadZones();
+    if (btn.dataset.tab === 'rates') loadRates();
+    if (btn.dataset.tab === 'agents') loadAgents();
+  });
+});
+
+// ---------- ORDERS ----------
+async function populateFilters() {
+  const fStatus = document.getElementById('fStatus');
+  fStatus.innerHTML = '<option value="">All statuses</option>' + STATUSES.map(s => `<option>${s}</option>`).join('');
+  const zones = await api('/zones');
+  document.getElementById('fZone').innerHTML = '<option value="">All zones</option>' + zones.map(z => `<option value="${z.id}">${z.name}</option>`).join('');
+  const agents = await api('/admin/users?role=agent');
+  document.getElementById('fAgent').innerHTML = '<option value="">All agents</option>' + agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+}
+
+async function loadOrders() {
+  const status = document.getElementById('fStatus').value;
+  const zone_id = document.getElementById('fZone').value;
+  const agent_id = document.getElementById('fAgent').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (zone_id) params.set('zone_id', zone_id);
+  if (agent_id) params.set('agent_id', agent_id);
+  const orders = await api('/orders?' + params.toString());
+  const tbody = document.querySelector('#ordersTable tbody');
+  tbody.innerHTML = orders.map(o => `
+    <tr>
+      <td>${o.order_code}</td>
+      <td>#${o.customer_id}</td>
+      <td>${o.order_type}/${o.payment_type}</td>
+      <td>${fmtMoney(o.total_charge)}</td>
+      <td><span class="badge ${statusClass(o.status)}">${o.status}</span></td>
+      <td>${o.agent_id ? '#' + o.agent_id : '-'}</td>
+      <td><button class="btn small secondary" onclick="viewOrder(${o.id})">View</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="7" class="muted">No orders match.</td></tr>';
+}
+
+async function viewOrder(id) {
+  const o = await api('/orders/' + id);
+  const agents = await api('/admin/users?role=agent');
+  const card = document.getElementById('detailCard');
+  card.style.display = '';
+  card.innerHTML = `
+    <h3>${o.order_code} <span class="badge ${statusClass(o.status)}">${o.status}</span></h3>
+    <p class="muted">${o.pickup_address} &rarr; ${o.drop_address}</p>
+    <div class="row">
+      <div><b>Total:</b> ${fmtMoney(o.total_charge)}</div>
+      <div><b>Billed weight:</b> ${o.billed_weight_kg} kg</div>
+      <div><b>Route:</b> ${o.rate_type}</div>
+    </div>
+
+    <div class="card" style="margin-top:12px;background:#f8fafc">
+      <h4>Assignment</h4>
+      <div class="row">
+        <select id="assignAgent">
+          <option value="">-- pick agent for manual assign --</option>
+          ${agents.map(a => `<option value="${a.id}">${a.name} ${a.is_available ? '' : '(unavailable)'}</option>`).join('')}
+        </select>
+        <button class="btn small" onclick="assignOrder(${o.id}, false)">Assign selected</button>
+        <button class="btn small secondary" onclick="assignOrder(${o.id}, true)">Auto-assign nearest</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;background:#f8fafc">
+      <h4>Override status</h4>
+      <div class="row">
+        <select id="overrideStatus">${STATUSES.map(s => `<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select>
+        <button class="btn small danger" onclick="overrideStatus(${o.id})">Set status</button>
+      </div>
+    </div>
+
+    <h4 style="margin-top:16px">Tracking timeline (immutable)</h4>
+    <ul class="timeline">
+      ${o.history.map(h => `<li><b>${h.status}</b> <span class="muted">— ${fmtDate(h.created_at)} by ${h.actor_role}</span>${h.notes ? `<br/><span class="muted">${h.notes}</span>` : ''}</li>`).join('')}
+    </ul>
+  `;
+}
+
+async function assignOrder(id, auto) {
+  try {
+    const body = auto ? {} : { agent_id: Number(document.getElementById('assignAgent').value) };
+    if (!auto && !body.agent_id) { alert('Pick an agent first'); return; }
+    await api(`/orders/${id}/assign`, { method: 'POST', body });
+    viewOrder(id); loadOrders();
+  } catch (err) { alert(err.message); }
+}
+async function overrideStatus(id) {
+  const status = document.getElementById('overrideStatus').value;
+  try {
+    await api(`/orders/${id}/status`, { method: 'PATCH', body: { status } });
+    viewOrder(id); loadOrders();
+  } catch (err) { alert(err.message); }
+}
+
+// ---------- ZONES ----------
+async function loadZones() {
+  const zones = await api('/zones');
+  document.getElementById('zoneList').innerHTML = zones.map(z => `
+    <div style="margin-bottom:10px">
+      <b>${z.name}</b><br/>
+      <span class="muted">${z.areas.length ? z.areas.join(', ') : 'no areas mapped yet'}</span>
+    </div>
+  `).join('') || '<p class="muted">No zones yet.</p>';
+  document.getElementById('areaZoneSelect').innerHTML = zones.map(z => `<option value="${z.id}">${z.name}</option>`).join('');
+}
+async function addZone() {
+  const name = document.getElementById('newZoneName').value.trim();
+  const errEl = document.getElementById('zoneErr');
+  errEl.textContent = '';
+  if (!name) return;
+  try {
+    await api('/zones', { method: 'POST', body: { name } });
+    document.getElementById('newZoneName').value = '';
+    loadZones();
+  } catch (err) { errEl.textContent = err.message; }
+}
+async function addArea() {
+  const zoneId = document.getElementById('areaZoneSelect').value;
+  const areaName = document.getElementById('areaName').value.trim();
+  const errEl = document.getElementById('areaErr');
+  errEl.textContent = '';
+  if (!zoneId || !areaName) return;
+  try {
+    await api(`/zones/${zoneId}/areas`, { method: 'POST', body: { area_name: areaName } });
+    document.getElementById('areaName').value = '';
+    loadZones();
+  } catch (err) { errEl.textContent = err.message; }
+}
+
+// ---------- RATE CARDS ----------
+async function loadRates() {
+  const cards = await api('/rate-cards');
+  document.getElementById('rateCardsBody').innerHTML = cards.map(c => `
+    <tr>
+      <td>${c.order_type}</td><td>${c.rate_type}</td>
+      <td><input style="width:90px" type="number" id="bp-${c.id}" value="${c.base_price}" /></td>
+      <td><input style="width:90px" type="number" id="rk-${c.id}" value="${c.rate_per_kg}" /></td>
+      <td><input style="width:90px" type="number" id="mc-${c.id}" value="${c.min_charge}" /></td>
+      <td><button class="btn small" onclick="saveRateCard(${c.id}, '${c.order_type}', '${c.rate_type}')">Save</button></td>
+    </tr>
+  `).join('');
+
+  const cod = await api('/rate-cards/cod');
+  document.getElementById('codBody').innerHTML = cod.map(c => `
+    <tr>
+      <td>${c.order_type}</td>
+      <td><input style="width:90px" type="number" id="cf-${c.order_type}" value="${c.flat_fee}" /></td>
+      <td><input style="width:90px" type="number" id="cp-${c.order_type}" value="${c.percent_fee}" /></td>
+      <td><button class="btn small" onclick="saveCod('${c.order_type}')">Save</button></td>
+    </tr>
+  `).join('');
+}
+async function saveRateCard(id, order_type, rate_type) {
+  const base_price = Number(document.getElementById(`bp-${id}`).value);
+  const rate_per_kg = Number(document.getElementById(`rk-${id}`).value);
+  const min_charge = Number(document.getElementById(`mc-${id}`).value);
+  await api('/rate-cards', { method: 'PUT', body: { order_type, rate_type, base_price, rate_per_kg, min_charge } });
+  loadRates();
+}
+async function saveCod(order_type) {
+  const flat_fee = Number(document.getElementById(`cf-${order_type}`).value);
+  const percent_fee = Number(document.getElementById(`cp-${order_type}`).value);
+  await api('/rate-cards/cod', { method: 'PUT', body: { order_type, flat_fee, percent_fee } });
+  loadRates();
+}
+
+// ---------- AGENTS ----------
+async function loadAgents() {
+  const agents = await api('/admin/users?role=agent');
+  const zones = await api('/zones');
+  const zoneName = (id) => zones.find(z => z.id === id)?.name || '-';
+  document.getElementById('agentsBody').innerHTML = agents.map(a => `
+    <tr><td>${a.name}</td><td>${a.email}</td><td>${zoneName(a.home_zone_id)}</td><td>${a.is_available ? 'Yes' : 'No'}</td></tr>
+  `).join('') || '<tr><td colspan="4" class="muted">No agents yet.</td></tr>';
+  document.getElementById('uZone').innerHTML = '<option value="">(none)</option>' + zones.map(z => `<option value="${z.id}">${z.name}</option>`).join('');
+}
+async function createUser() {
+  const name = document.getElementById('uName').value.trim();
+  const email = document.getElementById('uEmail').value.trim();
+  const password = document.getElementById('uPass').value;
+  const role = document.getElementById('uRole').value;
+  const home_zone_id = document.getElementById('uZone').value || null;
+  const errEl = document.getElementById('userErr');
+  const okEl = document.getElementById('userOk');
+  errEl.textContent = ''; okEl.textContent = '';
+  try {
+    await api('/admin/users', { method: 'POST', body: { name, email, password, role, home_zone_id } });
+    okEl.textContent = `${role} account created.`;
+    loadAgents();
+  } catch (err) { errEl.textContent = err.message; }
+}
+
+// ---------- NEW ORDER ON BEHALF ----------
+function gatherAdminOrderInput() {
+  return {
+    customer_email: document.getElementById('custEmail').value.trim(),
+    pickupAddress: document.getElementById('pickupAddress').value.trim(),
+    dropAddress: document.getElementById('dropAddress').value.trim(),
+    lengthCm: Number(document.getElementById('lengthCm').value),
+    breadthCm: Number(document.getElementById('breadthCm').value),
+    heightCm: Number(document.getElementById('heightCm').value),
+    actualWeightKg: Number(document.getElementById('actualWeightKg').value),
+    orderType: document.getElementById('orderType').value,
+    paymentType: document.getElementById('paymentType').value,
+  };
+}
+async function previewAdmin() {
+  const errEl = document.getElementById('adminOrderErr');
+  errEl.textContent = '';
+  try {
+    const b = await api('/orders/calculate-charge', { method: 'POST', body: gatherAdminOrderInput() });
+    document.getElementById('adminChargeCard').style.display = '';
+    document.getElementById('adminChargeBreakdown').innerHTML = `
+      <div>Route: <b>${b.rateType}</b></div>
+      <div>Billed weight: <b>${b.billedWeightKg} kg</b></div>
+      <div>Freight: <b>${fmtMoney(b.freightCharge)}</b></div>
+      <div>COD surcharge: <b>${fmtMoney(b.codSurcharge)}</b></div>
+      <hr/><div class="total">Total: ${fmtMoney(b.totalCharge)}</div>
+    `;
+  } catch (err) { errEl.textContent = err.message; }
+}
+async function submitAdminOrder() {
+  const errEl = document.getElementById('adminOrderErr');
+  const okEl = document.getElementById('adminOrderOk');
+  errEl.textContent = ''; okEl.textContent = '';
+  try {
+    const order = await api('/orders', { method: 'POST', body: gatherAdminOrderInput() });
+    okEl.textContent = `Order ${order.order_code} created for customer.`;
+  } catch (err) { errEl.textContent = err.message; }
+}
+
+(async function init() {
+  await populateFilters();
+  loadOrders();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Last-Mile Delivery Tracker</title>
+<script src="/js/api.js"></script>
+</head>
+<body>
+<script>
+  const s = getSession();
+  if (!s) {
+    window.location.href = '/pages/login.html';
+  } else if (s.user.role === 'admin') {
+    window.location.href = '/pages/admin.html';
+  } else if (s.user.role === 'agent') {
+    window.location.href = '/pages/agent.html';
+  } else {
+    window.location.href = '/pages/customer.html';
+  }
+</script>
+</body>
+</html>

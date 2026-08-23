@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Customer Dashboard · Delivery Tracker</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+<header class="topbar" id="topbar"></header>
+<div class="container">
+  <div class="tabs">
+    <button class="tabbtn active" data-tab="place">Place Order</button>
+    <button class="tabbtn" data-tab="orders">My Orders</button>
+  </div>
+
+  <div id="tab-place">
+    <div class="two-col">
+      <div class="card">
+        <h2>New order</h2>
+        <form id="orderForm">
+          <label>Pickup address (include area/pincode)</label>
+          <textarea id="pickupAddress" placeholder="e.g. 12 MG Road, Moradabad, 244001" required></textarea>
+          <label>Drop address (include area/pincode)</label>
+          <textarea id="dropAddress" placeholder="e.g. 88 Sector 18, Noida, 110001" required></textarea>
+
+          <div class="row">
+            <div><label>Length (cm)</label><input type="number" id="lengthCm" min="0.1" step="0.1" required /></div>
+            <div><label>Breadth (cm)</label><input type="number" id="breadthCm" min="0.1" step="0.1" required /></div>
+            <div><label>Height (cm)</label><input type="number" id="heightCm" min="0.1" step="0.1" required /></div>
+          </div>
+          <label>Actual weight (kg)</label>
+          <input type="number" id="actualWeightKg" min="0.01" step="0.01" required />
+
+          <div class="row">
+            <div>
+              <label>Order type</label>
+              <select id="orderType"><option value="B2C">B2C</option><option value="B2B">B2B</option></select>
+            </div>
+            <div>
+              <label>Payment type</label>
+              <select id="paymentType"><option value="Prepaid">Prepaid</option><option value="COD">COD</option></select>
+            </div>
+          </div>
+          <label>Preferred delivery date</label>
+          <input type="date" id="scheduledDate" />
+
+          <div class="row" style="margin-top:14px">
+            <button type="button" id="previewBtn" class="btn secondary">Preview charge</button>
+            <button type="submit" id="confirmBtn" class="btn" disabled>Confirm &amp; place order</button>
+          </div>
+          <div id="orderErr" class="error"></div>
+          <div id="orderOk" class="success"></div>
+        </form>
+      </div>
+
+      <div class="card" id="chargeCard" style="display:none">
+        <h3>Charge breakdown</h3>
+        <div class="charge-box" id="chargeBreakdown"></div>
+        <p class="hint">This is the exact amount that will be charged — confirm to place the order.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-orders" style="display:none">
+    <div class="card">
+      <h2>My orders</h2>
+      <table id="ordersTable">
+        <thead><tr><th>Order</th><th>Type</th><th>Payment</th><th>Total</th><th>Status</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="card" id="detailCard" style="display:none; margin-top:16px"></div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+const session = requireSession(['customer']);
+renderTopbar();
+
+document.querySelectorAll('.tabbtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabbtn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-place').style.display = btn.dataset.tab === 'place' ? '' : 'none';
+    document.getElementById('tab-orders').style.display = btn.dataset.tab === 'orders' ? '' : 'none';
+    if (btn.dataset.tab === 'orders') loadOrders();
+  });
+});
+
+function gatherOrderInput() {
+  return {
+    pickupAddress: document.getElementById('pickupAddress').value.trim(),
+    dropAddress: document.getElementById('dropAddress').value.trim(),
+    lengthCm: Number(document.getElementById('lengthCm').value),
+    breadthCm: Number(document.getElementById('breadthCm').value),
+    heightCm: Number(document.getElementById('heightCm').value),
+    actualWeightKg: Number(document.getElementById('actualWeightKg').value),
+    orderType: document.getElementById('orderType').value,
+    paymentType: document.getElementById('paymentType').value,
+    scheduledDate: document.getElementById('scheduledDate').value || null,
+  };
+}
+
+let lastPreview = null;
+
+document.getElementById('previewBtn').addEventListener('click', async () => {
+  const errEl = document.getElementById('orderErr');
+  errEl.textContent = '';
+  try {
+    const input = gatherOrderInput();
+    const breakdown = await api('/orders/calculate-charge', { method: 'POST', body: input });
+    lastPreview = breakdown;
+    document.getElementById('chargeCard').style.display = '';
+    document.getElementById('chargeBreakdown').innerHTML = `
+      <div>Route type: <b>${breakdown.rateType === 'intra' ? 'Intra-zone' : 'Inter-zone'}</b></div>
+      <div>Volumetric weight: <b>${breakdown.volumetricWeightKg} kg</b></div>
+      <div>Billed weight (higher of actual/volumetric): <b>${breakdown.billedWeightKg} kg</b></div>
+      <div>Freight charge: <b>${fmtMoney(breakdown.freightCharge)}</b></div>
+      <div>COD surcharge: <b>${fmtMoney(breakdown.codSurcharge)}</b></div>
+      <hr/>
+      <div class="total">Total: ${fmtMoney(breakdown.totalCharge)}</div>
+    `;
+    document.getElementById('confirmBtn').disabled = false;
+  } catch (err) {
+    document.getElementById('chargeCard').style.display = 'none';
+    document.getElementById('confirmBtn').disabled = true;
+    errEl.textContent = err.message;
+  }
+});
+
+document.getElementById('orderForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('orderErr');
+  const okEl = document.getElementById('orderOk');
+  errEl.textContent = ''; okEl.textContent = '';
+  try {
+    const input = gatherOrderInput();
+    const order = await api('/orders', { method: 'POST', body: input });
+    okEl.textContent = `Order ${order.order_code} placed! Total: ${fmtMoney(order.total_charge)}`;
+    document.getElementById('orderForm').reset();
+    document.getElementById('chargeCard').style.display = 'none';
+    document.getElementById('confirmBtn').disabled = true;
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+});
+
+async function loadOrders() {
+  const orders = await api('/orders');
+  const tbody = document.querySelector('#ordersTable tbody');
+  tbody.innerHTML = orders.map(o => `
+    <tr>
+      <td>${o.order_code}</td>
+      <td>${o.order_type}</td>
+      <td>${o.payment_type}</td>
+      <td>${fmtMoney(o.total_charge)}</td>
+      <td><span class="badge ${statusClass(o.status)}">${o.status}</span></td>
+      <td><button class="btn small secondary" onclick="viewOrder(${o.id})">View</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="6" class="muted">No orders yet.</td></tr>';
+}
+
+async function viewOrder(id) {
+  const o = await api('/orders/' + id);
+  const card = document.getElementById('detailCard');
+  card.style.display = '';
+  card.innerHTML = `
+    <h3>${o.order_code} <span class="badge ${statusClass(o.status)}">${o.status}</span></h3>
+    <p class="muted">${o.pickup_address} &rarr; ${o.drop_address}</p>
+    <div class="row">
+      <div><b>Billed weight:</b> ${o.billed_weight_kg} kg</div>
+      <div><b>Route:</b> ${o.rate_type}</div>
+      <div><b>Total:</b> ${fmtMoney(o.total_charge)}</div>
+    </div>
+    ${o.status === 'Failed' ? `
+      <div style="margin-top:14px">
+        <label>Reschedule delivery date</label>
+        <input type="date" id="reschedDate" />
+        <button class="btn" style="margin-top:8px" onclick="reschedule(${o.id})">Reschedule delivery</button>
+        <div id="reschedErr" class="error"></div>
+      </div>
+    ` : ''}
+    <h4 style="margin-top:18px">Tracking timeline</h4>
+    <ul class="timeline">
+      ${o.history.map(h => `<li><b>${h.status}</b> <span class="muted">— ${fmtDate(h.created_at)}</span>${h.notes ? `<br/><span class="muted">${h.notes}</span>` : ''}</li>`).join('')}
+    </ul>
+  `;
+}
+
+async function reschedule(orderId) {
+  const date = document.getElementById('reschedDate').value;
+  const errEl = document.getElementById('reschedErr');
+  if (!date) { errEl.textContent = 'Pick a date first'; return; }
+  try {
+    await api(`/orders/${orderId}/reschedule`, { method: 'POST', body: { new_date: date } });
+    viewOrder(orderId);
+    loadOrders();
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+}
+</script>
+</body>
+</html>
