@@ -157,23 +157,22 @@ class NotificationService {
         ctaUrl: order ? `${process.env.FRONTEND_URL || 'http://localhost:5173'}/customer/orders/${orderId}` : undefined,
       });
 
-      // Send real email via Gmail SMTP (service: 'gmail' SSL port 465)
+      // Send real email via Gmail SMTP with await so cloud network socket stays open
       if (this.transporter) {
-        const mailOptions = {
-          from: `"Last-Mile Tracker" <${process.env.SMTP_USER || 'saanyagarg400@gmail.com'}>`,
-          to: targetEmail,
-          subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
-          text: message,
-          html: htmlBody,
-        };
+        try {
+          const mailOptions = {
+            from: `"Last-Mile Tracker" <${process.env.SMTP_USER || 'saanyagarg400@gmail.com'}>`,
+            to: targetEmail,
+            subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
+            text: message,
+            html: htmlBody,
+          };
 
-        this.transporter.sendMail(mailOptions, (err, info) => {
-          if (err) {
-            console.error('❌ [GMAIL CLOUD SEND ERROR]', err.message);
-          } else {
-            console.log(`📧 [GMAIL CLOUD SENT SUCCESSFUL] To: ${targetEmail} | Subject: ${title} | MsgID: ${info.messageId}`);
-          }
-        });
+          const info = await this.transporter.sendMail(mailOptions);
+          console.log(`📧 [GMAIL CLOUD SENT SUCCESSFUL] To: ${targetEmail} | Subject: ${title} | MsgID: ${info.messageId}`);
+        } catch (mailErr) {
+          console.error('❌ [GMAIL CLOUD SEND ERROR]', mailErr.message);
+        }
       }
 
       return notif;

@@ -204,6 +204,7 @@ router.post('/', authenticate, validate(createOrderSchema), async (req, res, nex
     // Notify Customer
     await notificationService.notifyUser({
       userId: customerId,
+      recipientEmail: req.user?.email || newOrder.customer?.email,
       orderId: newOrder.id,
       title: 'Order Confirmed',
       message: `Your order #${newOrder.orderNumber} has been successfully created for ₹${newOrder.totalAmount}.`,
