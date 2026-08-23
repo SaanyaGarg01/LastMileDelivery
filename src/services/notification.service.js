@@ -1,33 +1,21 @@
 const prisma = require('../config/prisma');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 class NotificationService {
   constructor() {
-    this.transporter = null;
+    this.resend = null;
+    this.senderEmail = 'onboarding@resend.dev'; // Works without domain verification
     this.initMailer();
   }
 
   initMailer() {
-    const smtpUser = process.env.SMTP_USER || 'saanyagarg400@gmail.com';
-    const smtpPass = process.env.SMTP_PASS ? process.env.SMTP_PASS.replace(/\s+/g, '') : 'qohyurvvzffqhmpf';
+    const apiKey = process.env.RESEND_API_KEY;
 
-    if (smtpUser && smtpPass) {
-      this.transporter = nodemailer.createTransport({
-        service: 'gmail',
-        host: 'smtp.gmail.com',
-        port: 465,
-        secure: true,
-        auth: {
-          user: smtpUser,
-          pass: smtpPass,
-        },
-        tls: {
-          rejectUnauthorized: false,
-        },
-      });
-      console.log(`[MAILER] Real Gmail SMTP Transporter Initialized for ${smtpUser}`);
+    if (apiKey) {
+      this.resend = new Resend(apiKey);
+      console.log('[MAILER] ✅ Resend Email API Initialized');
     } else {
-      console.log('[MAILER] No SMTP credentials configured — email notifications will be logged to console');
+      console.log('[MAILER] ⚠️  No RESEND_API_KEY configured — emails will be logged to console only');
     }
   }
 
@@ -44,20 +32,12 @@ class NotificationService {
 </head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:32px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-    <!-- Header -->
     <tr>
       <td style="background:${statusColor};padding:24px 32px;">
-        <table width="100%" cellpadding="0" cellspacing="0">
-          <tr>
-            <td>
-              <p style="margin:0;color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">LAST-MILE DELIVERY TRACKER</p>
-              <h1 style="margin:8px 0 0;color:#ffffff;font-size:22px;font-weight:800;">${title}</h1>
-            </td>
-          </tr>
-        </table>
+        <p style="margin:0;color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">LAST-MILE DELIVERY TRACKER</p>
+        <h1 style="margin:8px 0 0;color:#ffffff;font-size:22px;font-weight:800;">${title}</h1>
       </td>
     </tr>
-    <!-- Body -->
     <tr>
       <td style="padding:32px;">
         ${recipientName ? `<p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi <strong style="color:#0f172a;">${recipientName}</strong>,</p>` : ''}
@@ -73,7 +53,6 @@ class NotificationService {
         </div>` : ''}
       </td>
     </tr>
-    <!-- Footer -->
     <tr>
       <td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;">
         <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center;">
@@ -87,44 +66,31 @@ class NotificationService {
 </html>`;
   }
 
-  /**
-   * Get status-specific email configuration
-   */
-  _getStatusEmailConfig(title) {
-    const statusColors = {
-      'Order Confirmed': '#10b981',
-      'Agent Assigned': '#0284c7',
-      'Order Picked Up': '#8b5cf6',
-      'In Transit': '#f59e0b',
-      'Out for Delivery': '#f97316',
-      'Delivered': '#10b981',
-      'Delivery Failed': '#ef4444',
-      'Delivery Rescheduled': '#06b6d4',
+  _getStatusColor(title) {
+    const map = {
+      'Confirmed': '#10b981', 'Assigned': '#0284c7', 'Picked': '#8b5cf6',
+      'Transit': '#f59e0b', 'Delivery': '#f97316', 'Delivered': '#10b981',
+      'Failed': '#ef4444', 'Rescheduled': '#06b6d4', 'Welcome': '#6366f1',
+      'Sign-In': '#64748b', 'Alert': '#64748b',
     };
-
-    const color = Object.entries(statusColors).find(([k]) => title.includes(k.split(' ')[0]) || title.includes(k))?.[1] || '#0284c7';
-    return { statusColor: color };
+    const key = Object.keys(map).find(k => title.includes(k));
+    return map[key] || '#0284c7';
   }
 
   /**
-   * Main notification handler — creates in-app notification, sends email via Gmail SMTP, and logs event
+   * Main notification handler
    */
   async notifyUser({ userId, recipientEmail, orderId, title, message, type = 'INFO' }) {
     let notif = null;
     try {
+      // 1. Save in-app notification
       if (userId) {
         notif = await prisma.notification.create({
-          data: {
-            userId,
-            orderId: orderId || undefined,
-            title,
-            message,
-            type,
-          },
+          data: { userId, orderId: orderId || undefined, title, message, type },
         }).catch(() => null);
       }
 
-      // Log Notification in NotificationLog
+      // 2. Log to NotificationLog table
       await prisma.notificationLog.create({
         data: {
           orderId: orderId || undefined,
@@ -132,47 +98,47 @@ class NotificationService {
           channel: 'EMAIL',
           type,
           status: 'SENT',
-          provider: 'GMAIL_SMTP',
+          provider: 'RESEND_API',
           message: `${title}: ${message}`,
           sentAt: new Date(),
         },
       }).catch(() => {});
 
-      // Get user info for email delivery
+      // 3. Get target email
       const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
-      const targetEmail = recipientEmail || user?.email || process.env.SMTP_USER;
+      const targetEmail = recipientEmail || user?.email;
 
       if (!targetEmail) return notif;
 
-      const { statusColor } = this._getStatusEmailConfig(title);
       const order = orderId ? await prisma.order.findUnique({ where: { id: orderId }, select: { orderNumber: true } }) : null;
-
       const htmlBody = this._buildEmailHtml({
         title,
         message,
         orderNumber: order?.orderNumber,
-        recipientName: user?.name || 'Valued User',
-        statusColor,
+        recipientName: user?.name || 'Valued Customer',
+        statusColor: this._getStatusColor(title),
         ctaText: order ? 'Track Your Order' : undefined,
-        ctaUrl: order ? `${process.env.FRONTEND_URL || 'http://localhost:5173'}/customer/orders/${orderId}` : undefined,
+        ctaUrl: order ? `${process.env.FRONTEND_URL || 'https://lastmiledelivery-iou3.onrender.com'}/customer/orders/${orderId}` : undefined,
       });
 
-      // Send real email via Gmail SMTP with await so cloud network socket stays open
-      if (this.transporter) {
-        try {
-          const mailOptions = {
-            from: `"Last-Mile Tracker" <${process.env.SMTP_USER || 'saanyagarg400@gmail.com'}>`,
-            to: targetEmail,
-            subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
-            text: message,
-            html: htmlBody,
-          };
+      // 4. Send via Resend HTTPS API (no SMTP port blocking)
+      if (this.resend) {
+        const { data, error } = await this.resend.emails.send({
+          from: `Last-Mile Tracker <${this.senderEmail}>`,
+          to: [targetEmail],
+          subject: `[Last-Mile Tracker] ${title}${order ? ` — ${order.orderNumber}` : ''}`,
+          text: message,
+          html: htmlBody,
+        });
 
-          const info = await this.transporter.sendMail(mailOptions);
-          console.log(`📧 [GMAIL CLOUD SENT SUCCESSFUL] To: ${targetEmail} | Subject: ${title} | MsgID: ${info.messageId}`);
-        } catch (mailErr) {
-          console.error('❌ [GMAIL CLOUD SEND ERROR]', mailErr.message);
+        if (error) {
+          console.error(`❌ [RESEND ERROR] To: ${targetEmail} | Error:`, error.message || JSON.stringify(error));
+        } else {
+          console.log(`📧 [RESEND SENT] To: ${targetEmail} | Subject: ${title} | ID: ${data?.id}`);
         }
+      } else {
+        // Fallback: log to console
+        console.log(`\n📧 [EMAIL LOG - NO API KEY]\n  To: ${targetEmail}\n  Subject: ${title}\n  Body: ${message}\n`);
       }
 
       return notif;
